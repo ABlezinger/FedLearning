@@ -1,6 +1,7 @@
 import os
 import random
 import sys
+import argparse
 
 import torch
 import torch.nn as nn
@@ -17,11 +18,30 @@ from tqdm import tqdm
 from medmnist import BreastMNIST
 import copy
 from torch.utils.data import DataLoader, Dataset, Subset
+import flwr
+from flwr.client import Client, ClientApp, NumPyClient
+from flwr.common import Metrics, Context
+from flwr.server import ServerApp, ServerConfig, ServerAppComponents
+from flwr.server.strategy import FedYogi
+from flwr.simulation import run_simulation
+from flwr.common import Context
 
 project_path = sys.path[0]
 data_path = project_path + "\data"
 
 random.seed(42)
+
+# Add argument parser at the beginning of the script
+parser = argparse.ArgumentParser(description='Federated Learning with FedAvg or FedYogi')
+parser.add_argument('--strategy', type=str, choices=['fedavg', 'fedyogi'], default='fedavg',
+                    help='Choose federated learning strategy (default: fedavg)')
+parser.add_argument('--eta', type=float, default=0.01, help='Server-side learning rate for FedYogi (default: 0.01)')
+parser.add_argument('--eta_l', type=float, default=0.0316, help='Client-side learning rate for FedYogi (default: 0.0316)')
+parser.add_argument('--beta1', type=float, default=0.9, help='Beta1 parameter for FedYogi (default: 0.9)')
+parser.add_argument('--beta2', type=float, default=0.99, help='Beta2 parameter for FedYogi (default: 0.99)')
+parser.add_argument('--tau', type=float, default=0.001, help='Tau parameter for FedYogi (default: 0.001)')
+
+args = parser.parse_args()
 
 # get dataset
 MNIST_preprocess = torchvision.transforms.Compose([torchvision.transforms.ToTensor(),
@@ -374,27 +394,82 @@ client_models = [copy.deepcopy(model) for _ in range(NUM_CLIENTS)]  # Local mode
 num_rounds = 10  # Number of communication rounds
 epochs_per_client = 20  # Number of local epochs per client
 
+# Define FlowerClient before the training section
+class FlowerClient(flwr.client.NumPyClient):
+    def __init__(self, model, train_loader, test_loader, device):
+        self.model = model
+        self.train_loader = train_loader
+        self.test_loader = test_loader
+        self.device = device
 
-for round_num in range(num_rounds):
-    print(f'\nCommunication Round {round_num+1}/{num_rounds}')
+    def get_parameters(self, config):
+        return [val.cpu().numpy() for val in self.model.state_dict().values()]
 
-    # Synchronize client models with the updated global model
-    for client_idx in range(NUM_CLIENTS):
-        client_models[client_idx].load_state_dict(global_model.state_dict())
+    def set_parameters(self, parameters):
+        params_dict = zip(self.model.state_dict().keys(), parameters)
+        state_dict = {k: torch.tensor(v) for k, v in params_dict}
+        self.model.load_state_dict(state_dict, strict=True)
+
+    def fit(self, parameters, config):
+        self.set_parameters(parameters)
+        train_local_model(self.model, self.train_loader, loss_fn, 
+                         optim.Adam(self.model.parameters(), lr=3e-4), 
+                         self.device, epochs=epochs_per_client)
+        return self.get_parameters(config={}), len(self.train_loader.dataset), {}
+
+    def evaluate(self, parameters, config):
+        self.set_parameters(parameters)
+        accuracy = evaluate_model(self.model, self.test_loader, self.device)
+        return float(accuracy), len(self.test_loader.dataset), {"accuracy": float(accuracy)}
+
+# Training section
+if args.strategy == 'fedyogi':
+    # Initialize FedYogi strategy
+    strategy = FedYogi(
+        initial_parameters=flwr.common.ndarrays_to_parameters([val.cpu().numpy() for val in global_model.state_dict().values()]),
+        eta=args.eta,
+        eta_l=args.eta_l,
+        beta_1=args.beta1,
+        beta_2=args.beta2,
+        tau=args.tau
+    )
     
-    # Train each client's model locally
-    for client_idx in range(NUM_CLIENTS):
-        print(f'Client {client_idx+1} training...')
-        train_local_model(client_models[client_idx], client_loaders[client_idx], loss_fn, 
-                          optim.Adam(client_models[client_idx].parameters(), lr=3e-4), device, epochs=epochs_per_client)
-        accuracy=evaluate_model(client_models[client_idx], test_loader, device)
-        print("accuracy:",accuracy)
+    # Create server configuration
+    server_config = ServerConfig(num_rounds=num_rounds)
     
-    # Aggregate client models to update global model
-    federated_averaging(global_model, client_models,client_data_sizes)
+    # Define client function
+    def client_fn(cid: str) -> Client:
+        client_model = copy.deepcopy(model)
+        train_loader = client_loaders[int(cid)]
+        return FlowerClient(client_model, train_loader, test_loader, device)
+    
+    # Run simulation
+    history = flwr.simulation.start_simulation(
+        client_fn=client_fn,
+        num_clients=NUM_CLIENTS,
+        config=server_config,
+        strategy=strategy
+    )
 
+else:  # fedavg
+    for round_num in range(num_rounds):
+        print(f'\nCommunication Round {round_num+1}/{num_rounds}')
 
-result = evaluate_model(global_model, test_loader, device)
+        # Synchronize client models with the updated global model
+        for client_idx in range(NUM_CLIENTS):
+            client_models[client_idx].load_state_dict(global_model.state_dict())
+        
+        # Train each client's model locally
+        for client_idx in range(NUM_CLIENTS):
+            print(f'Client {client_idx+1} training...')
+            train_local_model(client_models[client_idx], client_loaders[client_idx], loss_fn, 
+                            optim.Adam(client_models[client_idx].parameters(), lr=3e-4), device, epochs=epochs_per_client)
+            accuracy = evaluate_model(client_models[client_idx], test_loader, device)
+            print("accuracy:", accuracy)
+        
+        # Aggregate client models to update global model
+        federated_averaging(global_model, client_models, client_data_sizes)
 
-print(f"RESULT: {result}")
+    result = evaluate_model(global_model, test_loader, device)
+    print(f"RESULT: {result}")
 
