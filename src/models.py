@@ -1,5 +1,7 @@
+import os
 import torch
 import torch.nn as nn
+import flwr as fl
 
 class AttentionBlock(nn.Module):
     def __init__(self, embed_dim, hidden_dim, num_heads, dropout=0.0):
@@ -66,7 +68,12 @@ class VisionTransformer(nn.Module):
         self.transformer = nn.Sequential(
             *(AttentionBlock(embed_dim, hidden_dim, num_heads, dropout=dropout) for _ in range(num_layers))
         )
-        self.mlp_head = nn.Sequential(nn.LayerNorm(embed_dim), nn.Linear(embed_dim, num_classes), nn.Sigmoid())
+        self.mlp_head = nn.Sequential(
+            nn.LayerNorm(embed_dim), 
+            nn.Linear(embed_dim, embed_dim//2), 
+            nn.ReLU(), 
+            nn.Linear(embed_dim//2, num_classes)
+            )
         self.dropout = nn.Dropout(dropout)
 
         # Parameters/Embeddings
@@ -109,3 +116,12 @@ def img_to_patch(x, patch_size, flatten_channels=True):
     if flatten_channels:
         x = x.flatten(2, 4)  # [B, H'*W', C*p_H*p_W], MNIST [B, 16, 49]
     return x
+
+def load_model_from_parameters(path: str):
+    list_of_files = [fname for fname in glob.glob("./model_round_*")]
+    latest_round_file = max(list_of_files, key=os.path.getctime)
+    print("Loading pre-trained model from: ", latest_round_file)
+    state_dict = torch.load(latest_round_file)
+    net.load_state_dict(state_dict)
+    state_dict_ndarrays = [v.cpu().numpy() for v in net.state_dict().values()]
+    parameters = fl.common.ndarrays_to_parameters(state_dict_ndarrays)

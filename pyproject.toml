@@ -1,0 +1,28 @@
+[project]
+name = "flwr_project"
+version = "0.1.0"
+description = "Federated Learning with multiple strategies using Flower"
+authors = [{ name = "Your Name", email = "your.email@example.com" }]
+dependencies = [
+    "torch",
+    "torchvision",
+    "numpy",
+    "matplotlib",
+    "flwr",
+    "scikit-learn",
+    "tqdm",
+    "medmnist",
+    "argparse"
+]
+
+[tool.flwr.simulation]
+entrypoint = "BreastMNIST.py"  # Replace with your actual script filename
+min_num_clients = 3
+num_rounds = 5
+strategy = "fedavg"
+
+[tool.flwr.app]
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
