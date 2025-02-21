@@ -2,7 +2,6 @@ import os
 import torch
 import torch.nn as nn
 import flwr as fl
-from SavingStrategy import load_params
 import numpy as np
 
 class AttentionBlock(nn.Module):
@@ -119,8 +118,8 @@ def img_to_patch(x, patch_size, flatten_channels=True):
         x = x.flatten(2, 4)  # [B, H'*W', C*p_H*p_W], MNIST [B, 16, 49]
     return x
 
-def load_model_from_parameters(model, path = None):
-    weights = load_params(path)
+def load_model_from_parameters(model):
+    weights = load_params()
 
     with torch.no_grad():
             for param, weight in zip(model.parameters(), weights):
@@ -147,17 +146,26 @@ def train_local_model(model, train_loader, loss_fn, optimizer, device, epochs):
     return loss_history
 
 
-def evaluate_model(model, test_loader, device):
+def evaluate_model(model, test_loader, loss_fn, device):
     model.eval()
     correct = 0
     total = 0
+    loss = 0.0
     with torch.no_grad():
         for imgs, labels in test_loader:
             imgs, labels = imgs.to(device), labels.to(device)
             outputs = model(imgs)
+            loss += loss_fn(outputs, labels.squeeze(-1).long())
             predicted = torch.argmax(outputs, dim=1)
             total += labels.size(0)
             correct += (predicted == labels.squeeze(-1).long()).sum().item()
 
+    loss /= len(test_loader.dataset)
     accuracy = correct / total
-    return accuracy
+    return accuracy, loss
+
+
+def load_params():
+    loaded_data = np.load("assets/models/round-5-weights.npz")
+    weights = [torch.tensor(loaded_data[key]) for key in loaded_data.files]
+    return weights

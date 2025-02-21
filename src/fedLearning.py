@@ -17,8 +17,9 @@ import flwr
 from flwr.client import Client, ClientApp, NumPyClient
 from flwr.server import ServerApp, ServerConfig, ServerAppComponents
 from flwr.simulation import run_simulation
+from flwr.common import Metrics, Context
 
-# from datasets import load_dataset
+import logging
 import SavingStrategy
 
 def federated_learning_process(model=None, dataset:str = "BreastMNIST", strategy=None, clients:int = 3, rounds:int = 5, epochs:int = 10):
@@ -199,6 +200,7 @@ def federated_learning_process(model=None, dataset:str = "BreastMNIST", strategy
             self.train_loader = train_loader
             self.val_loader = val_loader
             self.device = device
+            self.losses = []
             
 
         def get_parameters(self, config):
@@ -211,36 +213,54 @@ def federated_learning_process(model=None, dataset:str = "BreastMNIST", strategy
 
         def fit(self, parameters, config):
             self.set_parameters(parameters)
-            train_local_model(self.model, self.train_loader, loss_fn, 
+            loss_history = train_local_model(self.model, self.train_loader, loss_fn, 
                             optim.Adam(self.model.parameters(), lr=3e-4), 
                             self.device, epochs=NUM_EPOCHS_PER_CLIENT)
+            self.losses.append(loss_history)
             return self.get_parameters(config={}), len(self.train_loader.dataset), {}
 
         def evaluate(self, parameters, config):
             self.set_parameters(parameters)
-            accuracy = evaluate_model(self.model, self.val_loader, self.device)
-            return float(accuracy), len(self.val_loader.dataset), {"accuracy": float(accuracy)}
+            accuracy, loss = evaluate_model(self.model, self.val_loader, loss_fn, self.device)
+
+            return float(loss), len(self.val_loader.dataset), {"accuracy": float(accuracy)}
 
 
     def client_fn(cid: str) -> Client:
             client_model = copy.deepcopy(model)
             train_loader = client_loaders[int(cid)]
-            return FlowerClient(client_model, train_loader, val_loader, device)
+            return FlowerClient(client_model, train_loader, val_loader, device).to_client()
     
-    server_config = ServerConfig(num_rounds=NUM_ROUNDS)
+    client =  ClientApp(client_fn=client_fn)
     
-    history = flwr.simulation.start_simulation(
-            client_fn=client_fn,
-            num_clients=NUM_CLIENTS,
-            config=server_config,
-            strategy=strategy
-        )
+    # server_config = ServerConfig(num_rounds=NUM_ROUNDS)
+    
+    # history = flwr.simulation.start_simulation(
+    #         client_fn=client_fn,
+    #         num_clients=NUM_CLIENTS,
+    #         config=server_config,
+    #         strategy=strategy
+    #     )
+    def server_fn(context: Context)-> ServerAppComponents:
 
-    result = evaluate_model(global_model, val_loader, device)
-    print(f"Achieved accuracy: {result}")
+        config = ServerConfig(num_rounds=NUM_ROUNDS)
+
+        return ServerAppComponents(strategy=strategy, config=config)
+
+    server = ServerApp(server_fn=server_fn)
+
+    
+    run_simulation(
+        server_app=server,
+        client_app=client,
+        num_supernodes=NUM_CLIENTS
+    )
+
 
     # load the model from the latest communication round and return it
     trained_model = load_model_from_parameters(model) 
+    result, _ = evaluate_model(trained_model, val_loader, loss_fn, device)
+    print(f"Achieved accuracy: {result}")
 
     return trained_model
 
