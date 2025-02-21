@@ -2,7 +2,7 @@ import os
 import sys
 from medmnist import BreastMNIST, DermaMNIST, PneumoniaMNIST, ChestMNIST, TissueMNIST
 import torchvision
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 import numpy as np
 
 project_path = sys.path[0]
