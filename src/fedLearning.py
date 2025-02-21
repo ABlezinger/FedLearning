@@ -259,7 +259,7 @@ def federated_learning_process(model=None, dataset:str = "BreastMNIST", strategy
 
     # load the model from the latest communication round and return it
     trained_model = load_model_from_parameters(model) 
-    result, _ = evaluate_model(trained_model, val_loader, loss_fn, device)
+    result, _ = evaluate_model(trained_model, test_loader, loss_fn, device)
     print(f"Achieved accuracy: {result}")
 
     return trained_model
