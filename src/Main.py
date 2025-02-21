@@ -98,12 +98,12 @@ else:
         min_available_clients=NUM_CLIENTS,  
         fraction_fit=1.0,                # Alle verfügbaren Clients nutzen
         fraction_evaluate=1.0,           # Alle Clients für Evaluation nutzen
-        beta=0.1                         # 10% von beiden Enden trimmen
+        #beta=0.1                         # 10% von beiden Enden trimmen
     )
 
 trained_new_model = federated_learning_process(
      model=global_model, 
-     dataset="BreastMNIST",
+     dataset="PneumoniaMNIST",
      strategy=strategy, 
      clients=NUM_CLIENTS, 
      rounds=NUM_ROUNDS, 

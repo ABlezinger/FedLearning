@@ -7,10 +7,6 @@ import torch
 from src.model_utils import VisionTransformer
 
 
-def load_params(path: str = "assets/models/round-5-weights.npz"):
-    loaded_data = np.load(path)
-    weights = [torch.tensor(loaded_data[key]) for key in loaded_data.files]
-    return weights
 
 
 class SaveModelYogi(FedYogi):
