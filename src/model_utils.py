@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import flwr as fl
 import numpy as np
+from sklearn.metrics import f1_score
 
 class AttentionBlock(nn.Module):
     def __init__(self, embed_dim, hidden_dim, num_heads, dropout=0.0):
@@ -151,18 +152,23 @@ def evaluate_model(model, test_loader, loss_fn, device):
     correct = 0
     total = 0
     loss = 0.0
+    all_labels = []
+    all_predictions = []
     with torch.no_grad():
         for imgs, labels in test_loader:
             imgs, labels = imgs.to(device), labels.to(device)
             outputs = model(imgs)
-            loss += loss_fn(outputs, labels.squeeze(-1).long())
+            loss += loss_fn(outputs, labels.squeeze(-1).long()).item()
             predicted = torch.argmax(outputs, dim=1)
             total += labels.size(0)
             correct += (predicted == labels.squeeze(-1).long()).sum().item()
+            all_labels.extend(labels.squeeze(-1).cpu().numpy())
+            all_predictions.extend(predicted.cpu().numpy())
 
-    loss /= len(test_loader.dataset)
+    loss /= len(test_loader)
     accuracy = correct / total
-    return accuracy, loss
+    f1 = f1_score(all_labels, all_predictions)
+    return accuracy, loss, f1
 
 
 def load_params():

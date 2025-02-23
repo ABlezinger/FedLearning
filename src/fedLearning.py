@@ -35,7 +35,10 @@ def federated_learning_process(model=None, dataset:str = "BreastMNIST", strategy
         epochs: int
         
     Returns:
-        trained_model: trained VisionTransformer model
+        trained_model: VisionTransformer
+            trained VisionTransformer model
+        results: dict 
+            Dictionary containing the test results (accuracy, f1)
     """
 
     NUM_CLIENTS = clients
@@ -72,10 +75,6 @@ def federated_learning_process(model=None, dataset:str = "BreastMNIST", strategy
         train_loader, val_loader, test_loader, num_classes = get_PneumoniaMNIST()
     elif dataset == "ChestMNIST":
         train_loader, val_loader, test_loader, num_classes = get_ChestMNIST()
-    elif dataset == "DermaMNIST":
-        train_loader, val_loader, test_loader, num_classes = get_DermaMNIST()
-    elif dataset == "TissueMNIST":
-        train_loader, val_loader, test_loader, num_classes = get_TissueMNIST()
 
     num_train_instances = len(train_loader.dataset)
 
@@ -83,26 +82,7 @@ def federated_learning_process(model=None, dataset:str = "BreastMNIST", strategy
     print("Device:", device)
 
     # TODO evtl dynamisch machen (num_patches , size etc.)
-    image_size = 28
-    embed_dim=256
-    hidden_dim=embed_dim*3
-    num_heads=8
-    num_layers=6
-    patch_size=7
-    num_patches=16
-    num_channels=1
-    dropout=0.2
-
-    if global_model is None:
-        global_model = VisionTransformer(embed_dim=embed_dim,
-                                hidden_dim=hidden_dim,
-                                num_heads=num_heads,
-                                num_layers=num_layers,
-                                patch_size=patch_size,
-                                num_channels=num_channels,
-                                num_patches=num_patches,
-                                num_classes=num_classes,
-                                dropout=dropout)
+    
 
     # Transfer to GPU
     global_model.to(device)
@@ -259,10 +239,15 @@ def federated_learning_process(model=None, dataset:str = "BreastMNIST", strategy
 
     # load the model from the latest communication round and return it
     trained_model = load_model_from_parameters(model) 
-    result, _ = evaluate_model(trained_model, test_loader, loss_fn, device)
-    print(f"Achieved accuracy: {result}")
+    acc, _, f1 = evaluate_model(trained_model, test_loader, loss_fn, device)
+    print(f"Achieved accuracy: {acc}")
 
-    return trained_model
+    test_results = {
+        "accuracy": acc,
+        "f1": f1
+    }
+
+    return trained_model, test_results
 
 
 
@@ -278,4 +263,26 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    federated_learning_process()
+    image_size = 28
+    embed_dim=256
+    hidden_dim=embed_dim*3
+    num_heads=8
+    num_layers=6
+    patch_size=7
+    num_patches=16
+    num_channels=1
+    dropout=0.2
+    num_classes = 2
+
+    
+    model = VisionTransformer(embed_dim=embed_dim,
+                            hidden_dim=hidden_dim,
+                            num_heads=num_heads,
+                            num_layers=num_layers,
+                            patch_size=patch_size,
+                            num_channels=num_channels,
+                            num_patches=num_patches,
+                            num_classes=num_classes,
+                            dropout=dropout)
+
+    federated_learning_process(model=model)

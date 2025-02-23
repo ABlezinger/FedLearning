@@ -2,7 +2,10 @@
 import SavingStrategy
 import argparse
 import copy
+import json
+import os 
 from src.model_utils import VisionTransformer
+from dataPreparation import get_BreastMNIST, get_PneumoniaMNIST, get_ChestMNIST
 from fedLearning import federated_learning_process
 import flwr
 
@@ -29,10 +32,10 @@ num_channels=1
 dropout=0.2
 
 NUM_CLIENTS = 3
-NUM_ROUNDS = 5
-NUM_EPOCHS = 10
+NUM_ROUNDS = 1
+NUM_EPOCHS = 1
 
-
+# initialize global model
 global_model = None
 if global_model is None:
     global_model = VisionTransformer(embed_dim=embed_dim,
@@ -46,7 +49,7 @@ if global_model is None:
                             dropout=dropout)
 
     
-
+# create custom strategy for the federated learning 
 if args.strategy == 'fedyogi':
     # Initialize FedYogi strategy
     strategy = SavingStrategy.SaveModelYogi(
@@ -101,11 +104,30 @@ else:
         #beta=0.1                         # 10% von beiden Enden trimmen
     )
 
-trained_new_model = federated_learning_process(
-     model=global_model, 
-     dataset="PneumoniaMNIST",
-     strategy=strategy, 
-     clients=NUM_CLIENTS, 
-     rounds=NUM_ROUNDS, 
-     epochs=NUM_EPOCHS, 
-)
+
+# set up continual learning setting 
+dataset_step_list = ["PneumoniaMNIST", "BreastMNIST", "ChestMNIST"]
+
+# continual learning loop
+for step, dataset in enumerate(dataset_step_list):
+    print(f"training model on step {step} with dataset {dataset}...")
+
+    global_model, results = federated_learning_process(
+        model=global_model, 
+        dataset=step,
+        strategy=strategy, 
+        clients=NUM_CLIENTS, 
+        rounds=NUM_ROUNDS, 
+        epochs=NUM_EPOCHS,
+    )
+
+    print(f"\nResults for {step} on the {dataset}-Dataset: \nf1: {results['f1']}, \naccuracy: {results['accuracy']}")
+    global_model.save(f"assets/models/round-{step}-weights.pth")   
+    print(f"Saved trained model for step {step}")
+
+    os.makedirs(f"results/{NUM_CLIENTS}_Clients_{NUM_ROUNDS}_Rounds_", exist_ok=True)
+
+    json.dump(results, open(f"results/{NUM_CLIENTS}_Clients_{NUM_ROUNDS}_Rounds_/step-{step}-{dataset}results.json", "w"))
+
+    # Compute forgetting, forward transfer...
+
