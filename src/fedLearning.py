@@ -1,4 +1,3 @@
-import os
 import random
 import sys
 import argparse
@@ -7,19 +6,17 @@ import copy
 
 import torch
 import torch.optim as optim
-from torch.utils.data import DataLoader, Dataset, Subset
-import numpy as np
-
-from src.model_utils import VisionTransformer, load_model_from_parameters, evaluate_model, train_local_model
-from dataPreparation import get_BreastMNIST, get_PneumoniaMNIST, get_ChestMNIST, get_DermaMNIST, get_TissueMNIST
+from torch.utils.data import DataLoader, Subset
 
 import flwr
-from flwr.client import Client, ClientApp, NumPyClient
+from flwr.client import Client, ClientApp
 from flwr.server import ServerApp, ServerConfig, ServerAppComponents
 from flwr.simulation import run_simulation
-from flwr.common import Metrics, Context
+from flwr.common import Context
 
-import logging
+from model_utils import VisionTransformer, load_model_from_parameters, evaluate_model, train_local_model
+from dataPreparation import get_BreastMNIST, get_PneumoniaMNIST, get_ChestMNIST
+
 import SavingStrategy
 
 def federated_learning_process(model=None, dataset:str = "BreastMNIST", strategy=None, clients:int = 3, rounds:int = 5, epochs:int = 10):
@@ -69,19 +66,18 @@ def federated_learning_process(model=None, dataset:str = "BreastMNIST", strategy
 
 
     # Load the BreastMNIST dataset
+    #print(dataset)
     if dataset == "BreastMNIST":
-        train_loader, val_loader, test_loader, num_classes = get_BreastMNIST()
+        train_loader, val_loader, _ , _ = get_BreastMNIST()
     elif dataset == "PneumoniaMNIST":
-        train_loader, val_loader, test_loader, num_classes = get_PneumoniaMNIST()
+        train_loader, val_loader, _, _ = get_PneumoniaMNIST()
     elif dataset == "ChestMNIST":
-        train_loader, val_loader, test_loader, num_classes = get_ChestMNIST()
+        train_loader, val_loader, _, _ = get_ChestMNIST()
 
     num_train_instances = len(train_loader.dataset)
 
-    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+    device = torch.device("mps") if torch.mps.is_available() else torch.device("cpu")
     print("Device:", device)
-
-    # TODO evtl dynamisch machen (num_patches , size etc.)
     
 
     # Transfer to GPU
@@ -97,7 +93,6 @@ def federated_learning_process(model=None, dataset:str = "BreastMNIST", strategy
 
     print("len of train_set::", num_train_instances)
     print("len of val_set::", len(val_loader.dataset))
-    print("len of test_set::", len(test_loader.dataset))
 
 
     # # Define the digit exclusions for each client
@@ -201,9 +196,10 @@ def federated_learning_process(model=None, dataset:str = "BreastMNIST", strategy
 
         def evaluate(self, parameters, config):
             self.set_parameters(parameters)
-            accuracy, loss = evaluate_model(self.model, self.val_loader, loss_fn, self.device)
+            accuracy, loss, f1 = evaluate_model(self.model, self.val_loader, loss_fn, self.device)
 
-            return float(loss), len(self.val_loader.dataset), {"accuracy": float(accuracy)}
+            return float(loss), len(self.val_loader.dataset), {"accuracy": float(accuracy),
+                                                               "f1": float(f1)}        
 
 
     def client_fn(cid: str) -> Client:
@@ -239,15 +235,8 @@ def federated_learning_process(model=None, dataset:str = "BreastMNIST", strategy
 
     # load the model from the latest communication round and return it
     trained_model = load_model_from_parameters(model) 
-    acc, _, f1 = evaluate_model(trained_model, test_loader, loss_fn, device)
-    print(f"Achieved accuracy: {acc}")
 
-    test_results = {
-        "accuracy": acc,
-        "f1": f1
-    }
-
-    return trained_model, test_results
+    return trained_model
 
 
 

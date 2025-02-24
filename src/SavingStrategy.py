@@ -1,10 +1,9 @@
-from flwr.server.strategy import FedYogi, FedAvg, FedAdam, FedTrimmedAvg, FedProx
-from typing import Callable, Dict, List, Optional, Tuple, Union, OrderedDict
-import flwr as fl
+from typing import Optional, Union
 import numpy as np
+import flwr as fl
 from flwr.common import Parameters, Scalar, FitRes
-import torch
-from src.model_utils import VisionTransformer
+from flwr.server.strategy import FedYogi, FedAvg, FedAdam, FedTrimmedAvg, FedProx
+
 
 
 
@@ -30,7 +29,7 @@ class SaveModelYogi(FedYogi):
 
             # Save aggregated_ndarrays to disk
             print(f"Saving round {server_round} aggregated_ndarrays...")
-            np.savez(f"assets/models/round-{server_round}-weights.npz", *aggregated_ndarrays)
+            np.savez(f"assets/models/latest_weights.npz", *aggregated_ndarrays)
 
         return aggregated_parameters, aggregated_metrics
     
@@ -56,7 +55,7 @@ class SaveModelFedAvg(FedAvg):
 
             # Save aggregated_ndarrays to disk
             print(f"Saving round {server_round} aggregated_ndarrays...")
-            np.savez(f"assets/models/round-{server_round}-weights.npz", *aggregated_ndarrays)
+            np.savez(f"assets/models/latest_weights.npz", *aggregated_ndarrays)
 
         return aggregated_parameters, aggregated_metrics
     
@@ -82,7 +81,7 @@ class SaveModelAdam(FedAdam):
 
             # Save aggregated_ndarrays to disk
             print(f"Saving round {server_round} aggregated_ndarrays...")
-            np.savez(f"assets/models/round-{server_round}-weights.npz", *aggregated_ndarrays)
+            np.savez(f"assets/models/latest_weights.npz", *aggregated_ndarrays)
 
         return aggregated_parameters, aggregated_metrics
     
@@ -108,7 +107,7 @@ class SaveModelTrimmedAvg(FedTrimmedAvg):
 
             # Save aggregated_ndarrays to disk
             print(f"Saving round {server_round} aggregated_ndarrays...")
-            np.savez(f"assets/models/round-{server_round}-weights.npz", *aggregated_ndarrays)
+            np.savez(f"assets/models/latest_weights.npz", *aggregated_ndarrays)
 
         return aggregated_parameters, aggregated_metrics
     
@@ -134,7 +133,7 @@ class SaveModelProx(FedProx):
 
             # Save aggregated_ndarrays to disk
             print(f"Saving round {server_round} aggregated_ndarrays...")
-            np.savez(f"assets/models/round-{server_round}-weights.npz", *aggregated_ndarrays)
+            np.savez(f"assets/models/latest_weights.npz", *aggregated_ndarrays)
 
         return aggregated_parameters, aggregated_metrics
 

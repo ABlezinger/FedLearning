@@ -1,14 +1,15 @@
-
 import SavingStrategy
 import argparse
 import copy
 import json
 import os 
-from src.model_utils import VisionTransformer
+import flwr
+import torch
+import numpy as np
+from model_utils import VisionTransformer, evaluate_model
 from dataPreparation import get_BreastMNIST, get_PneumoniaMNIST, get_ChestMNIST
 from fedLearning import federated_learning_process
-import flwr
-
+from continualUtils import calculate_backwards_transfer, calculate_forward_transfer
 
 parser = argparse.ArgumentParser(description='Federated Learning with multiple strategies')
 parser.add_argument('--strategy', type=str, choices=['fedavg', 'fedyogi', 'fedadam', 'fedtrimmedavg', 'fedprox'], default='fedavg',
@@ -31,22 +32,21 @@ num_patches=16
 num_channels=1
 dropout=0.2
 
-NUM_CLIENTS = 3
-NUM_ROUNDS = 1
-NUM_EPOCHS = 1
+NUM_CLIENTS = 1
+NUM_ROUNDS = 10
+NUM_EPOCHS = 5
 
 # initialize global model
-global_model = None
-if global_model is None:
-    global_model = VisionTransformer(embed_dim=embed_dim,
-                            hidden_dim=hidden_dim,
-                            num_heads=num_heads,
-                            num_layers=num_layers,
-                            patch_size=patch_size,
-                            num_channels=num_channels,
-                            num_patches=num_patches,
-                            num_classes=2,
-                            dropout=dropout)
+
+global_model = VisionTransformer(embed_dim=embed_dim,
+                        hidden_dim=hidden_dim,
+                        num_heads=num_heads,
+                        num_layers=num_layers,
+                        patch_size=patch_size,
+                        num_channels=num_channels,
+                        num_patches=num_patches,
+                        num_classes=2,
+                        dropout=dropout)
 
     
 # create custom strategy for the federated learning 
@@ -108,26 +108,67 @@ else:
 # set up continual learning setting 
 dataset_step_list = ["PneumoniaMNIST", "BreastMNIST", "ChestMNIST"]
 
+_, _, testP, _ = get_PneumoniaMNIST()
+_, _, testB, _ = get_BreastMNIST()
+_, _, testC, _ = get_ChestMNIST()
+test_sets = [testP, testB, testC]
+
+baseline_vector_acc = []
+baseline_vector_f1 = []
+
+for i, dataset in enumerate(dataset_step_list):
+    expert_model = copy.deepcopy(global_model)
+    expert_model = federated_learning_process(
+            model=expert_model, 
+            dataset=dataset,
+            strategy=strategy, 
+            clients=NUM_CLIENTS, 
+            rounds=NUM_ROUNDS, 
+            epochs=NUM_EPOCHS,
+        )
+    acc, _ , f1 = evaluate_model(expert_model, test_sets[i])
+    baseline_vector_acc.append(acc)
+    baseline_vector_f1.append(f1)
+
+
+
+test_matrix_acc = np.zeros((len(test_sets), len(test_sets)))
+test_matrix_f1 = np.zeros((len(test_sets), len(test_sets)))
+
 # continual learning loop
 for step, dataset in enumerate(dataset_step_list):
     print(f"training model on step {step} with dataset {dataset}...")
 
-    global_model, results = federated_learning_process(
+    global_model = federated_learning_process(
         model=global_model, 
-        dataset=step,
+        dataset=dataset,
         strategy=strategy, 
         clients=NUM_CLIENTS, 
         rounds=NUM_ROUNDS, 
         epochs=NUM_EPOCHS,
     )
-
-    print(f"\nResults for {step} on the {dataset}-Dataset: \nf1: {results['f1']}, \naccuracy: {results['accuracy']}")
-    global_model.save(f"assets/models/round-{step}-weights.pth")   
-    print(f"Saved trained model for step {step}")
-
-    os.makedirs(f"results/{NUM_CLIENTS}_Clients_{NUM_ROUNDS}_Rounds_", exist_ok=True)
-
-    json.dump(results, open(f"results/{NUM_CLIENTS}_Clients_{NUM_ROUNDS}_Rounds_/step-{step}-{dataset}results.json", "w"))
+    for i in range(step + 1):
+        acc, _, f1 = evaluate_model(global_model, test_sets[i])
+        test_matrix_acc[step][i] = acc
+        test_matrix_f1[step][i] = f1
 
     # Compute forgetting, forward transfer...
+fwt_acc = calculate_forward_transfer(baseline_vector_acc, test_matrix_acc)
+fwt_f1 = calculate_forward_transfer(baseline_vector_f1, test_matrix_f1)
+bwt_acc = calculate_backwards_transfer(test_matrix_acc)
+bwt_f1 = calculate_backwards_transfer(test_matrix_f1)
+
+results = {
+    "baseline_acc": baseline_vector_acc,
+    "baseline_f1": baseline_vector_f1,
+    "test_results_acc": test_matrix_acc[len(dataset_step_list) - 1].tolist(),
+    "test_results_f1": test_matrix_f1[len(dataset_step_list) - 1].tolist(),
+    "fwd_acc": fwt_acc,
+    "bwt_acc": bwt_acc,
+    "fwt_f1": fwt_f1,
+    "bwt_f1": bwt_f1
+}
+
+os.makedirs(f"results/{args.strategy}", exist_ok=True)
+json.dump(results, open(f"results/{args.strategy}/{NUM_CLIENTS}_Clients_{NUM_ROUNDS}_Rounds_results.json", "w"))
 

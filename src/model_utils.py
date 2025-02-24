@@ -147,7 +147,7 @@ def train_local_model(model, train_loader, loss_fn, optimizer, device, epochs):
     return loss_history
 
 
-def evaluate_model(model, test_loader, loss_fn, device):
+def evaluate_model(model, test_loader, loss_fn = None, device = "cpu"):
     model.eval()
     correct = 0
     total = 0
@@ -158,7 +158,8 @@ def evaluate_model(model, test_loader, loss_fn, device):
         for imgs, labels in test_loader:
             imgs, labels = imgs.to(device), labels.to(device)
             outputs = model(imgs)
-            loss += loss_fn(outputs, labels.squeeze(-1).long()).item()
+            if not loss_fn is None:
+                loss += loss_fn(outputs, labels.squeeze(-1).long()).item()
             predicted = torch.argmax(outputs, dim=1)
             total += labels.size(0)
             correct += (predicted == labels.squeeze(-1).long()).sum().item()
@@ -172,6 +173,6 @@ def evaluate_model(model, test_loader, loss_fn, device):
 
 
 def load_params():
-    loaded_data = np.load("assets/models/round-5-weights.npz")
+    loaded_data = np.load("assets/models/latest_weights.npz")
     weights = [torch.tensor(loaded_data[key]) for key in loaded_data.files]
     return weights
