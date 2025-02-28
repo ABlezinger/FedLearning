@@ -21,7 +21,7 @@ parser.add_argument('--beta2', type=float, default=0.99, help='Beta2 parameter f
 parser.add_argument('--tau', type=float, default=0.001, help='Tau parameter for FedYogi (default: 0.001)')
 
 args = parser.parse_args()
-
+os.makedirs(f"assets/models", exist_ok=True)
 image_size = 28
 embed_dim=256
 hidden_dim=embed_dim*3
@@ -32,9 +32,9 @@ num_patches=16
 num_channels=1
 dropout=0.2
 
-NUM_CLIENTS = 1
-NUM_ROUNDS = 10
-NUM_EPOCHS = 5
+NUM_CLIENTS = 3
+NUM_ROUNDS = 5
+NUM_EPOCHS = 10
 
 # initialize global model
 

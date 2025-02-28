@@ -147,8 +147,9 @@ def train_local_model(model, train_loader, loss_fn, optimizer, device, epochs):
     return loss_history
 
 
-def evaluate_model(model, test_loader, loss_fn = None, device = "cpu"):
+def evaluate_model(model, test_loader, loss_fn = None, device = "mps"):
     model.eval()
+    model.to(device)
     correct = 0
     total = 0
     loss = 0.0
