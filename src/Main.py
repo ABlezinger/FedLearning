@@ -11,6 +11,7 @@ from dataPreparation import get_BreastMNIST, get_PneumoniaMNIST, get_ChestMNIST
 from fedLearning import federated_learning_process
 from continualUtils import calculate_backwards_transfer, calculate_forward_transfer
 
+# Set up command-line argument parser for configuring the federated learning strategy
 parser = argparse.ArgumentParser(description='Federated Learning with multiple strategies')
 parser.add_argument('--strategy', type=str, choices=['fedavg', 'fedyogi', 'fedadam', 'fedtrimmedavg', 'fedprox'], default='fedavg',
                     help='Choose federated learning strategy (default: fedavg)')
@@ -20,8 +21,13 @@ parser.add_argument('--beta1', type=float, default=0.9, help='Beta1 parameter fo
 parser.add_argument('--beta2', type=float, default=0.99, help='Beta2 parameter for FedYogi (default: 0.99)')
 parser.add_argument('--tau', type=float, default=0.001, help='Tau parameter for FedYogi (default: 0.001)')
 
+# Parse command-line arguments
 args = parser.parse_args()
+
+# Create directory to save model weights
 os.makedirs(f"assets/models", exist_ok=True)
+
+# Define Vision Transformer hyperparameters
 image_size = 28
 embed_dim=256
 hidden_dim=embed_dim*3
@@ -32,12 +38,12 @@ num_patches=16
 num_channels=1
 dropout=0.2
 
+# Federated learning configuration
 NUM_CLIENTS = 3
 NUM_ROUNDS = 5
 NUM_EPOCHS = 10
 
-# initialize global model
-
+# Initialize the global Vision Transformer model
 global_model = VisionTransformer(embed_dim=embed_dim,
                         hidden_dim=hidden_dim,
                         num_heads=num_heads,
@@ -49,9 +55,9 @@ global_model = VisionTransformer(embed_dim=embed_dim,
                         dropout=dropout)
 
     
-# create custom strategy for the federated learning 
+# Configure the federated learning strategy based on the chosen method
 if args.strategy == 'fedyogi':
-    # Initialize FedYogi strategy
+    # Initialize FedYogi strategy with custom parameters
     strategy = SavingStrategy.SaveModelYogi(
         initial_parameters=flwr.common.ndarrays_to_parameters([val.cpu().numpy() for val in global_model.state_dict().values()]),
         eta=args.eta,
@@ -60,8 +66,8 @@ if args.strategy == 'fedyogi':
         beta_2=args.beta2,
         tau=args.tau
     )
-        
 elif args.strategy == 'fedadam':
+    # Initialize FedAdam strategy
     strategy = SavingStrategy.SaveModelAdam(
         initial_parameters=flwr.common.ndarrays_to_parameters([val.cpu().numpy() for val in global_model.state_dict().values()]),
         min_fit_clients=NUM_CLIENTS,
@@ -73,8 +79,8 @@ elif args.strategy == 'fedadam':
         beta_2=0.99,                     # Second moment factor
         tau=0.001                        # Controls the importance of the proximal term
     )
-
 elif args.strategy == 'fedprox':
+    # Initialize FedProx strategy
     strategy = SavingStrategy.SaveModelProx(
         initial_parameters=flwr.common.ndarrays_to_parameters([val.cpu().numpy() for val in global_model.state_dict().values()]),
         min_fit_clients=NUM_CLIENTS,
@@ -83,39 +89,40 @@ elif args.strategy == 'fedprox':
         fraction_evaluate=1.0,
         proximal_mu=0.01                 # Proximal term parameter (controls how far local models can deviate)
     )
-
 elif args.strategy == 'fedtrimmedavg':
+    # Initialize FedTrimmedAvg strategy
     strategy = SavingStrategy.SaveModelTrimmedAvg(
         initial_parameters=flwr.common.ndarrays_to_parameters([val.cpu().numpy() for val in global_model.state_dict().values()]),
-        min_fit_clients=NUM_CLIENTS,     # Für deine 3 Clients
+        min_fit_clients=NUM_CLIENTS,     
         min_available_clients=NUM_CLIENTS,  
-        fraction_fit=1.0,                # Alle verfügbaren Clients nutzen
-        fraction_evaluate=1.0,           # Alle Clients für Evaluation nutzen
-        beta=0.1                         # 10% von beiden Enden trimmen
+        fraction_fit=1.0,
+        fraction_evaluate=1.0,
+        beta=0.1                        # Trim 10% from both ends
     )
-
-else:  
+else: 
+    # Default to FedAvg strategy
     strategy = SavingStrategy.SaveModelFedAvg(
         initial_parameters=flwr.common.ndarrays_to_parameters([val.cpu().numpy() for val in global_model.state_dict().values()]),
-        min_fit_clients=NUM_CLIENTS,     # Für deine 3 Clients
-        min_available_clients=NUM_CLIENTS,  
-        fraction_fit=1.0,                # Alle verfügbaren Clients nutzen
-        fraction_evaluate=1.0,           # Alle Clients für Evaluation nutzen
-        #beta=0.1                         # 10% von beiden Enden trimmen
+        min_fit_clients=NUM_CLIENTS,     
+        min_available_clients=NUM_CLIENTS,
+        fraction_fit=1.0,
+        fraction_evaluate=1.0,
     )
 
-
-# set up continual learning setting 
+# Set up the continual learning setting with multiple datasets
 dataset_step_list = ["PneumoniaMNIST", "BreastMNIST", "ChestMNIST"]
 
+# Load test datasets for evaluation
 _, _, testP, _ = get_PneumoniaMNIST()
 _, _, testB, _ = get_BreastMNIST()
 _, _, testC, _ = get_ChestMNIST()
 test_sets = [testP, testB, testC]
 
+# Baseline performance vectors for accuracy and F1 score
 baseline_vector_acc = []
 baseline_vector_f1 = []
 
+# Evaluate baseline performance for each dataset
 for i, dataset in enumerate(dataset_step_list):
     expert_model = copy.deepcopy(global_model)
     expert_model = federated_learning_process(
@@ -130,15 +137,15 @@ for i, dataset in enumerate(dataset_step_list):
     baseline_vector_acc.append(acc)
     baseline_vector_f1.append(f1)
 
-
-
+# Initialize matrices to store test results for accuracy and F1 score
 test_matrix_acc = np.zeros((len(test_sets), len(test_sets)))
 test_matrix_f1 = np.zeros((len(test_sets), len(test_sets)))
 
-# continual learning loop
+# Continual learning loop
 for step, dataset in enumerate(dataset_step_list):
     print(f"training model on step {step} with dataset {dataset}...")
 
+    # Train the global model on the current dataset
     global_model = federated_learning_process(
         model=global_model, 
         dataset=dataset,
@@ -147,17 +154,20 @@ for step, dataset in enumerate(dataset_step_list):
         rounds=NUM_ROUNDS, 
         epochs=NUM_EPOCHS,
     )
+
+    # Evaluate the model on all datasets up to the current step
     for i in range(step + 1):
         acc, _, f1 = evaluate_model(global_model, test_sets[i])
         test_matrix_acc[step][i] = acc
         test_matrix_f1[step][i] = f1
 
-    # Compute forgetting, forward transfer...
+# Calculate forward and backward transfer metrics
 fwt_acc = calculate_forward_transfer(baseline_vector_acc, test_matrix_acc)
 fwt_f1 = calculate_forward_transfer(baseline_vector_f1, test_matrix_f1)
 bwt_acc = calculate_backwards_transfer(test_matrix_acc)
 bwt_f1 = calculate_backwards_transfer(test_matrix_f1)
 
+# Compile results into a dictionary
 results = {
     "baseline_acc": baseline_vector_acc,
     "baseline_f1": baseline_vector_f1,
@@ -169,6 +179,6 @@ results = {
     "bwt_f1": bwt_f1
 }
 
+# Save results to a JSON file
 os.makedirs(f"results/{args.strategy}", exist_ok=True)
 json.dump(results, open(f"results/{args.strategy}/{NUM_CLIENTS}_Clients_{NUM_ROUNDS}_Rounds_results.json", "w"))
-

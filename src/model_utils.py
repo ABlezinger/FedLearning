@@ -8,18 +8,23 @@ from sklearn.metrics import f1_score
 class AttentionBlock(nn.Module):
     def __init__(self, embed_dim, hidden_dim, num_heads, dropout=0.0):
         """
-        Inputs:
-            embed_dim - Dimensionality of input and attention feature vectors
-            hidden_dim - Dimensionality of hidden layer in feed-forward network
-                         (usually 2-4x larger than embed_dim)
-            num_heads - Number of heads to use in the Multi-Head Attention block
-            dropout - Amount of dropout to apply in the feed-forward network
+        Implements the Attention Block for the Vision Transformer.
+
+        Args:
+            embed_dim (int): Dimensionality of input and attention feature vectors.
+            hidden_dim (int): Dimensionality of the hidden layer in the feed-forward network.
+            num_heads (int): Number of attention heads in the Multi-Head Attention block.
+            dropout (float): Dropout rate applied in the feed-forward network.
         """
         super().__init__()
-
+        
+        # Layer normalization for input stabilization
         self.layer_norm_1 = nn.LayerNorm(embed_dim)
+        # Multi-Head Attention mechanism
         self.attn = nn.MultiheadAttention(embed_dim, num_heads)
+        # Layer normalization before the feed-forward network
         self.layer_norm_2 = nn.LayerNorm(embed_dim)
+        # Feed-forward network with GELU activation and dropout
         self.linear = nn.Sequential(
             nn.Linear(embed_dim, hidden_dim),
             nn.GELU(),
@@ -29,8 +34,11 @@ class AttentionBlock(nn.Module):
         )
 
     def forward(self, x):
+        """Forward pass through the Attention Block."""
         inp_x = self.layer_norm_1(x)
+        # Apply Multi-Head Attention and residual connection
         x = x + self.attn(inp_x, inp_x, inp_x)[0]
+        # Apply feed-forward network and residual connection
         x = x + self.linear(self.layer_norm_2(x))
         return x
     
@@ -48,28 +56,30 @@ class VisionTransformer(nn.Module):
         dropout=0.0,
     ):
         """
-        Inputs:
-            embed_dim - Dimensionality of the input feature vectors to the Transformer
-            hidden_dim - Dimensionality of the hidden layer in the feed-forward networks
-                         within the Transformer
-            num_channels - Number of channels of the input (3 for RGB or 1 for grayscale)
-            num_heads - Number of heads to use in the Multi-Head Attention block
-            num_layers - Number of layers to use in the Transformer
-            num_classes - Number of classes to predict
-            patch_size - Number of pixels that the patches have per dimension
-            num_patches - Maximum number of patches an image can have
-            dropout - Amount of dropout to apply in the feed-forward network and
-                      on the input encoding
+        Implements the Vision Transformer (ViT) model.
+
+        Args:
+            embed_dim (int): Dimensionality of input feature vectors.
+            hidden_dim (int): Dimensionality of hidden layers in the Transformer.
+            num_channels (int): Number of input channels (1 for grayscale, 3 for RGB).
+            num_heads (int): Number of attention heads in each Attention Block.
+            num_layers (int): Number of Attention Blocks in the Transformer.
+            num_classes (int): Number of output classes for classification.
+            patch_size (int): Size of each image patch.
+            num_patches (int): Maximum number of patches per image.
+            dropout (float): Dropout rate applied in the Transformer.
         """
         super().__init__()
 
         self.patch_size = patch_size
 
-        # Layers/Networks
+        # Input layer to project patches into the embedding dimension
         self.input_layer = nn.Linear(num_channels * (patch_size**2), embed_dim)
+        # Stack of Attention Blocks
         self.transformer = nn.Sequential(
             *(AttentionBlock(embed_dim, hidden_dim, num_heads, dropout=dropout) for _ in range(num_layers))
         )
+        # MLP head for classification
         self.mlp_head = nn.Sequential(
             nn.LayerNorm(embed_dim), 
             nn.Linear(embed_dim, embed_dim//2), 
@@ -78,11 +88,12 @@ class VisionTransformer(nn.Module):
             )
         self.dropout = nn.Dropout(dropout)
 
-        # Parameters/Embeddings
+        # Learnable class token and positional embeddings
         self.cls_token = nn.Parameter(torch.randn(1, 1, embed_dim))
         self.pos_embedding = nn.Parameter(torch.randn(1, 1 + num_patches, embed_dim))
 
     def forward(self, x):
+        """Forward pass through the Vision Transformer."""
         # Preprocess input
         x = img_to_patch(x, self.patch_size)        # x.shape ---> batch, num_patches, (patch_size**2)
         B, T, _ = x.shape
@@ -105,13 +116,18 @@ class VisionTransformer(nn.Module):
     
 def img_to_patch(x, patch_size, flatten_channels=True):
     """
-    Inputs:
-        x - Tensor representing the image of shape [B, C, H, W]
-        patch_size - Number of pixels per dimension of the patches (integer)
-        flatten_channels - If True, the patches will be returned in a flattened format
-                           as a feature vector instead of a image grid.
+    Converts an image into patches.
+
+    Args:
+        x (torch.Tensor): Input image tensor of shape [B, C, H, W].
+        patch_size (int): Size of each patch.
+        flatten_channels (bool): If True, flattens the patches into feature vectors.
+
+    Returns:
+        torch.Tensor: Tensor of patches with shape [B, num_patches, patch_features].
     """
     B, C, H, W = x.shape # [B, C, H, W], MNIST [B, 1, 28, 28]
+    # Reshape image into patches
     x = x.reshape(B, C, H // patch_size, patch_size, W // patch_size, patch_size) # [B, C, H', p_H, W', p_W], MNIST [B, 1, 4, 7, 4, 7]
     x = x.permute(0, 2, 4, 1, 3, 5)  # [B, H', W', C, p_H, p_W], MNIST [B, 4, 4, 1, 7, 7]
     x = x.flatten(1, 2)  # [B, H'*W', C, p_H, p_W], MNIST [B, 16, 1, 7, 7]
@@ -120,6 +136,15 @@ def img_to_patch(x, patch_size, flatten_channels=True):
     return x
 
 def load_model_from_parameters(model):
+    """
+    Loads model parameters from saved weights.
+
+    Args:
+        model (nn.Module): The model to load weights into.
+
+    Returns:
+        nn.Module: The model with loaded weights.
+    """
     weights = load_params()
 
     with torch.no_grad():
@@ -130,6 +155,20 @@ def load_model_from_parameters(model):
 
 
 def train_local_model(model, train_loader, loss_fn, optimizer, device, epochs):
+    """
+    Trains the model locally on a client's dataset.
+
+    Args:
+        model (nn.Module): The model to train.
+        train_loader (DataLoader): DataLoader for the training dataset.
+        loss_fn (nn.Module): Loss function for training.
+        optimizer (torch.optim.Optimizer): Optimizer for training.
+        device (str): Device to use for training (e.g., "cpu", "cuda").
+        epochs (int): Number of training epochs.
+
+    Returns:
+        list: History of training losses.
+    """
     model.train()
     loss_history = []
     for epoch in range(epochs):
@@ -148,6 +187,18 @@ def train_local_model(model, train_loader, loss_fn, optimizer, device, epochs):
 
 
 def evaluate_model(model, test_loader, loss_fn = None, device = "mps"):
+    """
+    Evaluates the model on a test dataset.
+
+    Args:
+        model (nn.Module): The model to evaluate.
+        test_loader (DataLoader): DataLoader for the test dataset.
+        loss_fn (nn.Module, optional): Loss function for evaluation. Defaults to None.
+        device (str): Device to use for evaluation (e.g., "cpu", "cuda").
+
+    Returns:
+        tuple: Accuracy, loss, and F1 score.
+    """
     model.eval()
     model.to(device)
     correct = 0
@@ -174,6 +225,12 @@ def evaluate_model(model, test_loader, loss_fn = None, device = "mps"):
 
 
 def load_params():
+    """
+    Loads model parameters from a saved file.
+
+    Returns:
+        list: List of model weights as torch.Tensor.
+    """
     loaded_data = np.load("assets/models/latest_weights.npz")
     weights = [torch.tensor(loaded_data[key]) for key in loaded_data.files]
     return weights
