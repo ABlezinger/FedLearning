@@ -1,10 +1,5 @@
 # FedLearning
 
-# Advanced Deep Reinforcement Learning
-This project aims to combine the exploration strategy offered by Random Network Distillation (RND) with the robustness of Proximal Policy Optimization (PPO). As previous attempts improved smaller state-space environments, this project is thought to solve the milestones from Crafter environment which is a 2D abstraction of Minecraft. The main challenge in this project is the utilization of intrinsic rewards while the base environment has incorporated milestones which are essential for the reward function and solving the environment. 
-
-## Results
-
 ## Installation
 ### (Recommended) Setup new clean environment
 Use a conda package manager.
