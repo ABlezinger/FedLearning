@@ -21,7 +21,7 @@ pip install -r requirements.txt
 To run an experiment, specify the strategy. The code will run fedavg if none is specified.
 Example:
 ```py
-python Main.py --strategy fedyogi
+python src/Main.py --strategy fedyogi
 
 ```
 
