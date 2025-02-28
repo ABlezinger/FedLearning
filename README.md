@@ -20,9 +20,10 @@ pip install -r requirements.txt
 ## How to run
 To run an experiment, specify the strategy. The code will run fedavg if none is specified.
 Example:
+```py
 python Main.py --strategy fedyogi
 
-
+```
 
 ## Used Hardware
 | Compute/Evaluation Infrastructure    |                                      |
@@ -35,6 +36,4 @@ python Main.py --strategy fedyogi
 | OS                                   | Sonoma 14.5                        |
 | Python Version                       | 3.10.16                      |
 
-## Further Work
 
-## Sources
