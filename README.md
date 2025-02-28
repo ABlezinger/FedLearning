@@ -1,11 +1,9 @@
-# FedLearning
+# Federated Learning
+This project aims to benchmark existing Federated Learning strategies.  
 
 ## Installation
 ### (Recommended) Setup new clean environment
 Use a conda package manager.
-
-# Federated Learning
-This project aims to benchmark existing Federated Learning strategies.  
 
 ## Installation
 ### (Recommended) Setup new clean environment
